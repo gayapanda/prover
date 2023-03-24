@@ -1,0 +1,538 @@
+---
+title: "ut_aug22_NyDIF_8.trinn"
+author: "Ga Young Yoon"
+date: "21 3 2023"
+output:
+  html_document: default
+---
+
+
+#################### Innstaller og/eller last inn relevante pakker ##############
+
+```{r setup, include=FALSE}
+require(mirt)
+require(ggplot2)
+require(tidyr)
+require(psych)
+require(dplyr)
+require(knitr)
+require(ggExtra)
+require(latticeExtra)
+require(kableExtra)
+require(readxl)
+require(ltm)
+
+ 
+##### Spesifiser lagringsområde, velg brødsmulesti fra filutforsker ##### 
+##### husk å endre backslash til slash #####
+
+# setwd("Z:/Databehandling/R/Nytt script")
+
+### Du kan sjekke at lagringsområdet er riktig: 
+
+############################## Laste inn data #########################################
+
+## Excel-fila må ryddes. Fjern alt untatt kjønn og score. Kjønn skal ligge i første kolonne ##
+## OBS husk å fjerne "item-0" hvis det er arkfaner i prøven ##
+
+##### Last inn datafil - kopier brødsmulestien og legg til filnavn ######
+setwd("C:/Users/GAYOO/OneDrive - Udir/OneDrive - Utdanningsdirektoratet/Desktop/UDIR/NPLES/prover23/2.utproving")
+
+# omkodet fil fra Jostein
+mydata <- read.csv2("NP8-23_Andre pilot_Til IRT_csv.csv")
+##### Lager en fil for kjønn
+
+Gender<- data.frame(mydata[,1])
+names(Gender)<- "Gender"
+
+##### bare score ####
+myscores <- mydata # alt er score
+
+# str(myscores)
+
+#### Legger til kjønns-kolonnen i score-filen 
+colnames(myscores) <- c("Gender", colnames(myscores[,-1])) 
+##### Ikke inkluder Kjønn, altså kolonne 1. (feks: 2:35 (da er det 34 items)) ####
+
+## omkode gender
+myscores$Gender[myscores["Gender"] == "1"] <- "G"
+myscores$Gender[myscores["Gender"] == "2"] <- "J"
+
+
+#### Sjekk at kolonnene nå er numeric ved å sjekke strukturen i datasettet: ###
+
+# str(myscores)
+
+# gaya sin fil rydding
+OnlyZeros<- which(colSums(myscores==0) == nrow(myscores))   # ingenting 
+#myscores<- myscores[,-OnlyZeros]  # eliminerer tekst variabel med bare 0 i score
+
+# Vi lagrer en vektor (k) med antallet kolonner i datafilen. Dette gjør det mulig å gjenbruke scriptet for andre datafiler. #
+k<- ncol(myscores)
+
+
+############## Kalibrerer IRT-modell ####################
+# Her spesifiserer vi at IRT-analysen skal gjøres på kolonne 2 til det tallet som blir lagret i "k". 
+# Dette betyr at analysen beregner alle oppgaver som har en score i datasettet. 
+# Kolonne 1 er kjønnskolonnen og skal ikke tas inn i denne beregningen her.
+# Antall ferdigheter som finnes i datagrunnlaget, i dette tilfellet 1 overordnet ferdighet
+
+myirtmodel<- mirt(myscores[,2:k],
+              1, "gpcm") 
+
+
+##### Ekstraksjon av  oppgaveparamatere og theta-scorer ####
+
+############### Kan vi få inn biseral og løsningsprosent ##########
+
+myirtmodel_coefs<- data.frame(coef(myirtmodel, 
+                               IRTpars = TRUE, 
+                               simplify = TRUE))
+
+
+## Lager en vektor med navnene i Koeffisent-fila ###
+
+ParameterLabs<- names(myirtmodel_coefs)
+
+### Fjerne irrelevante navn i ParameterLabs ### 
+
+ParameterLabs<- ParameterLabs[ParameterLabs != "F1"];
+ParameterLabs<- ParameterLabs[ParameterLabs != "means"];
+
+######### Bare bruke disse hvis vi kjører 3PL ###############
+# ParameterLabs<- ParameterLabs[ParameterLabs != "items.g"];
+# ParameterLabs<- ParameterLabs[ParameterLabs != "items.u"];
+
+### Fjerner irrelevante kolonner i koeffisent-fila
+
+myirtmodel_coefs<- myirtmodel_coefs[,ParameterLabs]
+
+
+##### Lagrer vanskegradsverdiene i en annen fil i tillegg for videre analyser ####
+##### Tilpass antall kolonner til hvor mange b-verdier du har (polytome har flere) ####
+
+bvalues<- myirtmodel_coefs[,2:ncol(myirtmodel_coefs)]
+
+## Lager en dataramme av b-verdiene 
+
+bvalues<- as.data.frame(t(bvalues))
+
+# Lagrer høyeste b-verdi (dvs vanskegrad) fra hvert item i datafilen som heter "betas"
+betas=c()
+
+# Fyller betas-filen med alle b-verdiene som beskrevet ovenfor 
+for (i in 1:ncol(bvalues)){
+  betas[i]= max(bvalues[,i],na.rm = T)
+}
+
+betas<- data.frame(betas)
+
+########## 
+
+## Estimerer theta-scorene
+Factor_score<- data.frame(fscores(myirtmodel,full.scores.SE = TRUE))
+
+## Endrer til et mer leselig navn
+names(Factor_score)<- c("Theta","SEM")
+
+
+##### Oscars' funksjon for deskriptiv statistikk #####
+
+## Expanding the summary function by adding additional descriptive  statistics 
+Desc_stats<- function(data){
+  Descriptives<- data.frame(
+    Minimum<- round(min(data,na.rm = T),3), # Minimum value
+    Median<- round(median(data, na.rm = T),3), # Median value
+    M<- round(mean(data, na.rm = T),3), # Mean value
+    Maximum<- round(max(data,na.rm = T),3), # Maximum value
+    Std.Dev<- round(sd(data, na.rm = T),3), # Standard deviation
+    Variance<- round(var(data,na.rm = T),3), # Variance
+    Kurtosis<- round(kurtosi(data,na.rm = T),3), # Kurtosis
+    Skewness<- round(skew(data,na.rm = T),3)) # Skewness
+  names(Descriptives)<- c("Minimum", "Median", "Mean", "Maximum","SD", "Var", "Kurtosis","Skewness")
+  return(Descriptives)
+}
+
+
+# Vi bruker funksjonen på theta-scorene 
+Factor_score_summary<- Desc_stats(Factor_score[,1])
+
+# Endre navnet i fila
+rownames(Factor_score_summary)<- "Theta-scores"
+
+# Samme prosedyre for alle a-parameterne 
+a_desc<-Desc_stats(myirtmodel_coefs[,1])
+rownames(a_desc) <- "Discrimination (a)"
+
+
+# og b-paramterene 
+b_desc<-Desc_stats(betas[,1])
+rownames(b_desc) <- "Difficulty (b1-bk)"
+
+
+### Vi kombinerer de deskriptive statistikkene i en datafil etter rader
+
+IRT_coef_summary<- rbind(a_desc,b_desc) # radbinding 
+
+
+########## Vi beskriver dataene i myscores, velger ut N og Mean og endrer navn ### 
+
+descmyscores <- describe(myscores)
+descshort <- round(descmyscores[2:k,2:3], 3)
+names(descshort) <- c("Antall elever", "LP total")
+
+
+### Vi kombinerer alle tabellene for item statistikkene i en stor fil
+
+#### Kalkulerer losningsprosent "LP" for jenter og gutter 
+
+# lagrer dette i en liste med "describeBy" funksjonen
+
+gender_LP<- describeBy(myscores,group = myscores$Gender) 
+
+# Vi lagrer LP for gutter
+Boys_LP<- data.frame(gender_LP[["G"]][["mean"]]) 
+
+# minus LP for kjonnsvariabel (denne er 100 % fordi den teller antall gutter)
+Boys_LP<- Boys_LP[-1,] 
+
+# Samme prosedyre for jenter som gutter
+
+Girls_LP<- data.frame(gender_LP[["J"]][["mean"]])
+Girls_LP<- Girls_LP[-1,]
+
+# Vi kombinerer dette i en datafil 
+
+gender_LP<- data.frame(cbind(Girls_LP,Boys_LP))
+Item_labs <- colnames(myscores[,2:ncol(myscores)])
+rownames(gender_LP)<- Item_labs # Endrer radnavn
+names(gender_LP)<- c("LP_Girls","LP_boys") # Endrer kolonnenavn 
+
+### Vi kombinerer alle tabeller for item statistikkene i en stor fil
+
+Item_stats<- data.frame(descshort,
+                        round(gender_LP,3), # LP for gutter og jenter
+                        round(myirtmodel_coefs,3)) 
+
+
+## Lager vektorer ####
+
+alphas <- as.vector(myirtmodel_coefs$items.a)
+b <- as.vector(betas$betas)
+
+### Korrelasjon mellom diskriminering og vanskegrad
+
+cor.test(alphas, b) 
+
+
+####################### Biserial korrelasjon #############
+
+### biserial korrelasjon mellom theta og skår for oppgaver med lav a-verdier
+
+lav_averdi <- myirtmodel_coefs[myirtmodel_coefs$items.a < 0.8,] 
+
+
+########### Trenger vi denne lista?? ############ Vi trenger kanskje ikke å utheve/kursivere de med lav a ###########
+lav_averdi1 <- as.vector(matrix(NA, nrow(lav_averdi), 1))
+
+for (a in 1: nrow(lav_averdi)) {
+  lav_averdi1[a] <- which(rownames(Item_stats)==row.names(lav_averdi)[a])
+}
+
+## biserial korrelasjon for alle oppgaver
+## skal lage biserial korrelasjon som en kolonne inne i tabellen til Item stats. 
+# bis-kor er korrelasjon mellom theta og score-verdier
+# cor.test(): test for association/correlation between paired samples. 
+# It returns both the correlation coefficient and the significance level (or p-value) of the correlation. 
+# Men her trenger vi kun $estimate fra cor.test() funksjonen. 
+# klassisk diskriminering bruker sumskår, men her bruker vi theta-verdier istedet
+
+
+# Lage en vektor med theta
+
+theta <- Factor_score$Theta  
+
+# score
+kunscores <- myscores[,2:ncol(myscores)]
+
+bis.kor <- as.vector(matrix(NA,ncol(kunscores),1))
+
+for (i in 1:ncol(kunscores)) {
+  bis.kor[i] <-cor.test(theta, kunscores[,i])$estimate
+}
+
+# lage en kolonne i Item stats for biserial korrelasjon
+
+Item_stats$bis.kor <- round(bis.kor, 3)
+
+names(Item_stats) <- c("N", "LP", "LP_j", "LP_g", "a-verdi", "b1", "b2", "R-bis")
+
+```
+
+
+#### SÅ LANGT VI KOM i UDIR #### 
+######################################################################################
+
+## Test statistikk
+### Figure 1: Histogram av theta
+
+```{r Factor_score1, echo=FALSE}
+ggplot(Factor_score,aes(x= Theta))+
+  geom_histogram(bins =12, color = "white",
+  fill = "steelblue")+
+  theme_bw()+
+  ylab("N")+
+  xlab("Theta")
+
+```
+
+Theta fordelingen blant elevpopulasjonen viser en normal kurve med gjennomsnittsverdi på rundt 0.
+
+################# Trenger vi Figur 2 når vi har figur 5 (Tif og SEM) #################
+
+### Figure 2: Standard error of measurement (SEM) av theta
+ 
+```{r Factor_score2, echo=FALSE}
+# Plottype nr.2: Linjeplot (SEM for theta-scorene)
+ggplot(Factor_score,aes(x= Theta, y = SEM))+
+  geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs"))+ # Linjetype som inkluderer 95% konfidensintervall i mÃ¥leusikkerheten til SEM
+  theme_bw()+ 
+  ylab("SEM")+
+  xlab("Theta")
+```
+
+Den blå grafen representerer standard feil av theta.  
+Standard feilen er størst på hver ende av måling av theta skala. 
+
+### Table 2: Deskriptiv statiskk for theta
+
+```{r Factor_score_descriptive, results='asis', echo = FALSE}
+  kable(Factor_score_summary)
+```
+### Cronbach's alpha
+
+```{r alpha, echo=FALSE}
+# cronbachs alpha
+cronbach.alpha(kunscores)
+
+```
+
+### Table 3: Deskriptiv statistikk for IRT parametere
+
+```{r IRTcoefs, results='asis',echo= FALSE}
+kable(IRT_coef_summary)
+```
+
+Tabell 3 viser deskriptiv statistikk for IRT parametere. 
+
+#################### Denne finnes ikke i scriptet til gaya ###############
+############# Her fikk vi feilmelding "Error: Discrete value supplied to continuous scale" ############
+
+
+Figur 3 viser et scatterplot med histogram fordeling og linje graf. 
+Den horisontale linjen viser grenseverdien 0,8 for a-parametere. 
+Den vertikale linjen viser ønskede gjennomsnittsverdien 0 for theta og b-parametere. 
+Den ønskede verdien her er 0.
+
+
+### Figur 4: Density plot av vanskegrad og theta
+
+```{r densityplot, echo=FALSE}
+ggplot()+
+  geom_density(data = betas,aes(betas), col = "red",lwd = 1.2)+ # tetthetskurve nr. 1
+  geom_density(data = Factor_score,aes(Theta),col = "blue",lwd = 1.2, lty = 2)+ # tetthetskurve nr. 2
+  theme_bw()+
+  ggtitle("Theta (blue) and difficulty (red)")+
+  xlab(expression(theta))+
+  xlim(c(-3,3))
+```
+
+Figur 4 viser hvordan fordelingen av vanskegrad av oppgaver og theta fordeling overlapper eller viker. 
+Røde grafen er oppgavenes vanskegrad og blå grafen er fordelingen av theta.  
+Her i figuren kan en se at det er flere oppgaver som er på lavere nivå enn gjennomsnitt. 
+På øvre sikt derimot er det færre oppgaver som dekker theta nivået. 
+
+### Figure 5: Test Information og Standard feil
+
+```{r Test information, echo=FALSE}
+plot(myirtmodel, 
+     type = "infoSE",
+     theta_lim = c(-3,3))
+```
+
+Figur 5 viser test information function (TIF) i blå farge, med betinget standard error av måling (CSEM) i stripete rød linje. 
+
+
+######################## Item statistikk
+
+Item statistikk vises her med med antall elever bak hver oppgave, LP.total = løsningsprosent total, items.a = diskrimineringsverdi, items.b1 og items.b2 = vanskegrad. 
+Oppgaver med større antall elever er kohortoppgaver og oppgaver med mindre antall elever er ankeroppgaver. 
+
+
+## Table 4: Item statistics
+
+Oppgaver med lav diskriminering (a-verdi < 0,8) i Tabell 4 er i kursiv. 
+
+```{r item statistics, results='asis',echo= FALSE}
+kable(Item_stats)
+
+```
+
+####################### IRT-bilder av oppgavene 
+
+############## Her fikk Tove feilmelding - Warning på flere items og disse fikk ikke bilder ########
+
+```{r ICCs, echo=FALSE}
+oppgavenavn <- colnames(myscores[,-1])
+
+for (j in 1:length(oppgavenavn)) {
+  g <- itemplot(myirtmodel, 
+                item = j, 
+                main = oppgavenavn[j], 
+                type = "infotrace", 
+                theta_lim = c(-3,3)) +
+  itemfit(myirtmodel, empirical.plot = j)
+  kable(Item_stats[j,], caption = "Item statistics")
+  kable(table(myscores[,c(1,j+1)]), caption = "Frequency")
+  print(g)
+}
+
+
+```
+
+
+###################  Differential Item Functioning mellom gutter og jenter
+
+
+######### DENNE PLEIER IKKE Å FUNKE - KAN HOPPE OVER DENNE ##########
+
+```{r DIF drop down, echo=FALSE, include=FALSE}
+################## DENNE FUNKER, slightly less restrictive model ############
+### drop down approach (freely estimating parameters across groups) when
+### specifying a highly constrained model with estimated latent parameters
+kjonn <- myscores$Gender
+
+model_constrained <- multipleGroup(kunscores, 1, group = kjonn,
+invariance = c(colnames(kunscores), 'free_means', 'free_var'))
+dropdown <- DIF(model_constrained, c('a1', 'd'), scheme = 'drop', seq_stat = 'BIC')
+dropdown
+
+difoppgavenavn <- rownames(dropdown[dropdown[,"p"] < 0.05,]) # 13 DIF oppgaver
+
+```
+
+```{r effect size, echo=FALSE, include=FALSE}
+
+ankers <- rownames(dropdown[dropdown[,"p"] > 0.05,])
+
+# New model restricted with final anchor items
+newmg <- multipleGroup(kunscores, 1, group = kjonn, invariance = c("free_means", "free_var", ankers), method = "EM", verbose=FALSE, technical=list(warn=F))
+coef(newmg, IRT = TRUE)
+coef(newmg)$J$GroupPars # report with 95% CI
+
+### Effect size after purification
+ES <- empirical_ES(newmg, Theta.focal = NULL,
+                   focal_items = 1L:extract.mirt(newmg, "nitems"), DIF = TRUE,
+                   npts = 61, theta_lim = c(-3, 3), ref.group = 1, plot = FALSE,
+                   par.strip.text = list(cex = 0.7),
+                   par.settings = list(strip.background = list(col = "#9ECAE1"),
+                                       strip.border = list(col = "black")))
+miniES <- data.frame(round(ES$ESSD,3))
+
+rownames(ES) <- colnames(kunscores)
+row.names(miniES) <- row.names(ES)
+colnames(miniES) <- "ESSD"
+
+# cohens criteria
+verysmallcohensd <- abs(ES[,"ESSD"]) > 0
+smallcohensd <- abs(ES[,"ESSD"]) > 0.2
+medcohensd <- abs(ES[,"ESSD"]) > 0.5
+larcohensd <- abs(ES[,"ESSD"]) > 0.8
+table(verysmallcohensd)
+table(smallcohensd)
+table(medcohensd)
+table(larcohensd)
+
+```
+
+
+### Group mean difference between boys and girls 
+
+```{r finding dif, echo=FALSE, include=FALSE}
+dif2 <- as.data.frame(dropdown[dropdown[,"p"] < 0.05,])
+
+# dette er rekkefølgen av difoppgaver i hoved datasett
+difoppgaver <- as.vector(matrix(NA, ncol(dif2), 1))
+
+for (t in 1: nrow(dif2)) {
+  difoppgaver[t] <- which(colnames(kunscores)==rownames(dif2)[t])
+}
+
+mg2coef_pars <- data.frame(round(coef(newmg)$J$GroupPars,3))
+names(mg2coef_pars) <- c("Mean difference (G-J)", "Covariance")
+```
+
+```{r final mg, echo=FALSE}
+kable(mg2coef_pars, caption="Mean difference in theta scores")
+
+```
+
+Expected score stadnardized difference (ESSD) er forskjellen på forventede thetaskår mellom to grupper på oppgavenivå. Tabellen nedenfor viser størrelsen på DIF gjennom ESSD på alle oppgaver. Referensegruppe er gutter, og har forventede gjennomsnittsverdi av theta på 0. Oppgaver med negative verdier har dermed guttenes favør, og omvendt. Men størrelsen på ESSD kanselleres i tilfeller med nonuniform DIF. Tallene bør sees sammen med ICC. 
+
+```{r miniES, echo=FALSE}
+kable(miniES)
+
+```
+
+### Probability function and information function on final 13 DIF items
+
+
+```{r DIF plot ICC funksjon, echo=FALSE}
+for (w in 1: nrow(dif2)) {
+plot(seq(-3,3, by = 0.01), probtrace(extract.item(extract.group(newmg, 1), difoppgaver[w]), seq(-3,3, by = 0.01))[,2], type = "l", xlab = "", ylab = "", ylim = c(0,1), lwd = 2.5, main = difoppgavenavn[w]) 
+par(new = TRUE)
+plot(seq(-3,3, by = 0.01), probtrace(extract.item(extract.group(newmg, 2), difoppgaver[w]), seq(-3,3, by = 0.01))[,2], type = "l", lty=2 ,xlab = "θ", ylab = "Probability",bty='L', ylim = c(0,1), lwd = 2.5)
+par(xpd=TRUE)
+legend("topleft", lty= 1:2, legend = c("Gutter", "Jenter"), box.lty=1)
+print(w)
+}
+
+```
+
+### Information function curves for 13 DIF items
+
+#### Information function forteller oss om hvilke ferdighetsområder oppgaven gir høyere eller lavere informasjon til oss. Informasjonen korrelerer direkte med dikrimineringsverdi for oppgaven.
+
+```{r DIF plot info, echo=FALSE}
+for (q in 1: nrow(dif2)) {
+plot(seq(-3,3, by = 0.01), iteminfo(extract.item(extract.group(newmg, 1), difoppgaver[q]), seq(-3,3, by = 0.01)), type = "l", xlab = "", ylab = "", ylim = c(0,1), lwd = 1, main = difoppgavenavn[q]) 
+par(new = TRUE)
+plot(seq(-3,3, by = 0.01), iteminfo(extract.item(extract.group(newmg, 2), difoppgaver[q]), seq(-3,3, by = 0.01)), type = "l", lty=2 ,xlab = "θ", ylab = "Information",bty='L', ylim = c(0,1), lwd = 1)
+par(xpd=TRUE)
+legend("topleft", lty= 1:2, legend = c("Gutter", "Jenter"), box.lty=1)
+print(w)
+}
+
+```
+
+### Test characteristic function and Test information function
+#### TCC er samlet sannsynlighets funksjon for hele oppgavesett. TIF kan tolkes som samlet diskrimineringsverdi for hele oppgavesett.
+
+```{r TCC og TIC, echo=FALSE}
+#### Test characteristic function
+plot(seq(-3, 3, by = 0.01), expected.test(extract.group(newmg, 1), matrix(seq(-3, 3, by = 0.01))), type = "l", xlab = "", ylab = "", ylim = c(0, 40), lwd = 2.5, main = "Test Characteristic Curve")
+par(new = TRUE)
+plot(seq(-3, 3, by = 0.01), expected.test(extract.group(newmg, 2), matrix(seq(-3, 3, by = 0.01))), type = "l",lty=2, xlab = "θ", ylab = "Expected Trait Score", ylim = c(0, 40), lwd = 2.5)
+par(xpd=TRUE)
+legend("topleft", lty= 1:2, legend = c("Gutter", "Jenter"), box.lty=1)
+
+#### Test information function
+plot(seq(-3, 3, by = 0.01), testinfo(extract.group(newmg, 1), seq(-3, 3, by = 0.01)), type = "l", xlab = "", ylab = "", ylim = c(0, 20), lwd = 2.5, main = "Test Information Function")
+par(new = TRUE)
+plot(seq(-3, 3, by = 0.01), testinfo(extract.group(newmg, 2), seq(-3, 3, by = 0.01)), type = "l",lty=2, xlab = "θ", ylab = "Information", ylim = c(0, 20), lwd = 2.5)
+par(xpd=TRUE)
+legend("topleft", lty= 1:2, legend = c("Gutter", "Jenter"), box.lty=1)
+
+```
+
+
