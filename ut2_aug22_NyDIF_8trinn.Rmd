@@ -403,9 +403,6 @@ for (j in 1:length(oppgavenavn)) {
 
 ###################  Differential Item Functioning mellom gutter og jenter
 
-
-######### DENNE PLEIER IKKE Å FUNKE - KAN HOPPE OVER DENNE ##########
-
 ```{r DIF drop down, echo=FALSE, include=FALSE}
 ################## DENNE FUNKER, slightly less restrictive model ############
 ### drop down approach (freely estimating parameters across groups) when
